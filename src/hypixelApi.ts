@@ -7,7 +7,7 @@ import { Agent } from 'https'
 
 if (!process.env.hypixel_keys)
 	// if there's no hypixel keys in env, run dotenv
-	(await import('dotenv')).config()
+	(await import('dotenv')).config({path: process.env.ENV_FILE ? process.env.ENV_FILE : '.env'})
 
 
 /** This array should only ever contain one item because using multiple hypixel api keys isn't allowed :) */

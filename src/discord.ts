@@ -1,6 +1,6 @@
 import { fetch } from 'undici'
 
-const DISCORD_CLIENT_ID = '885347559382605916'
+const DISCORD_CLIENT_ID = '937105508320546896'
 
 
 export interface TokenResponse {

@@ -68,7 +68,7 @@ export async function cleanPlayerAchievements(data: typedHypixelApi.PlayerDataRe
 			const achievement: ChallengeAchievement = {
 				id: achievementId.toLowerCase(),
 				name: achievementData.name,
-				unlocked: data.achievementsOneTime.includes(`skyblock_${achievementId.toLowerCase()}`),
+				unlocked: data.achievementsOneTime?.includes(`skyblock_${achievementId.toLowerCase()}`) ?? false,
 				description: achievementData.description
 			}
 			if (achievement.unlocked)

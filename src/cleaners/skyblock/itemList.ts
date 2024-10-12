@@ -41,28 +41,48 @@ export interface ItemListData {
 
 function cleanItemRequirements(data: typedHypixelApi.SkyBlockItemsResponse['items'][number]['requirements'], catacombsRequirements: typedHypixelApi.SkyBlockItemsResponse['items'][number]['catacombs_requirements']): ItemRequirement {
     if (!data) return {}
-    let dungeonData = data.dungeon ?? catacombsRequirements?.dungeon
-    return {
-        dungeon: dungeonData ? {
-            type: dungeonData.type.toLowerCase(),
-            level: dungeonData.level
-        } : undefined,
-        skill: data.skill ? {
-            type: data.skill.type.toLowerCase(),
-            level: data.skill.level
-        } : undefined,
-        slayer: data.slayer ? {
-            boss: data.slayer.slayer_boss_type,
-            level: data.slayer.level
-        } : undefined
+    let requirement: ItemRequirement = {
+        dungeon: undefined,
+        skill: undefined,
+        slayer: undefined
     }
+    for (const req of data) {
+        if (req.type === 'DUNGEON_SKILL') {
+            requirement.dungeon = {
+                type: req.dungeon_type,
+                level: req.level
+            }
+        } else if (req.type === 'SKILL') {
+            requirement.skill = {
+                type: req.skill.toLowerCase(),
+                level: req.level
+            }
+        } else if (req.type === 'SLAYER') {
+            requirement.slayer = {
+                boss: req.slayer_boss_type,
+                level: req.level
+            }
+        }
+    }
+    if (!requirement.dungeon && catacombsRequirements) {
+        // Fallback to "catacombsRequirements" field if there wasn't a dungeon requirement in the "requirements" field
+        for (const req of catacombsRequirements) {
+            if (req.type === 'DUNGEON_SKILL') {
+                requirement.dungeon = {
+                    type: req.dungeon_type,
+                    level: req.level
+                }
+            }
+        }
+    }
+    return requirement;
 }
 
 function cleanItemListItem(item: typedHypixelApi.SkyBlockItemsResponse['items'][number]): ItemListItem {
     const vanillaId = cleanItemId(item.durability ? `${item.material}:${item.durability}` : item.material)
     return {
         id: item.id,
-        headTexture: (item.material === 'SKULL_ITEM' && 'skin' in item) ? headIdFromBase64(item.skin) : undefined,
+        headTexture: (item.material === 'SKULL_ITEM' && 'skin' in item) && item.skin ? headIdFromBase64(item.skin) : undefined,
         vanillaId,
         tier: item.tier ?? null,
         display: {

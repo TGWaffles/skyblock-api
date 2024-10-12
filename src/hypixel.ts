@@ -71,8 +71,8 @@ export async function sendCleanApiRequest<P extends keyof typeof cleanResponseFu
 
 const cleanResponseFunctions = {
 	'player': (data, options) => cleanPlayerResponse(data.player),
-	'skyblock/profile': (data: typedHypixelApi.SkyBlockProfileResponse, options) => cleanSkyblockProfileResponse(data.profile, options),
-	'skyblock/profiles': (data, options) => cleanSkyblockProfilesResponse(data.profiles, options),
+	'v2/skyblock/profile': (data: typedHypixelApi.SkyBlockProfileResponse, options) => cleanSkyblockProfileResponse(data.profile, options),
+	'v2/skyblock/profiles': (data, options) => cleanSkyblockProfilesResponse(data.profiles, options),
 	'skyblock/auctions_ended': (data, options) => cleanEndedAuctions(data),
 	'skyblock/auction': (data, options) => cleanAuctions(data, options.page ?? 0),
 	'resources/skyblock/election': (data, options) => cleanElectionResponse(data),
@@ -250,7 +250,7 @@ export async function fetchMemberProfile(user: string, profile: string, customiz
  */
 export async function fetchMemberProfileUncached(playerUuid: string, profileUuid: string): Promise<null | CleanFullProfile> {
 	const profile = await sendCleanApiRequest(
-		'skyblock/profile',
+		'v2/skyblock/profile',
 		{ profile: profileUuid },
 		{ mainMemberUuid: playerUuid }
 	)
@@ -274,7 +274,7 @@ export async function fetchMemberProfileUncached(playerUuid: string, profileUuid
  */
 export async function fetchBasicProfileFromUuidUncached(profileUuid: string): Promise<CleanProfile | null> {
 	const profile = await sendCleanApiRequest(
-		'skyblock/profile',
+		'v2/skyblock/profile',
 		{ profile: profileUuid },
 		{ basic: true }
 	)
@@ -285,7 +285,7 @@ export async function fetchBasicProfileFromUuidUncached(profileUuid: string): Pr
 
 export async function fetchMemberProfilesUncached(playerUuid: string): Promise<CleanFullProfile[] | null> {
 	const profiles = await sendCleanApiRequest(
-		'skyblock/profiles',
+		'v2/skyblock/profiles',
 		{ uuid: playerUuid },
 		{
 			// only the inventories for the main player are generated, this is for optimization purposes

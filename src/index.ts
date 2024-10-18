@@ -7,7 +7,7 @@ import express from 'express'
 import { getKeyUsage } from './hypixelApi.js'
 import { basicPlayerCache, basicProfilesCache, playerCache, profileCache, profileNameCache, profilesCache, usernameCache } from './hypixelCached.js'
 import { register } from './metrics.js'
-import { ensureFullMemberProfile } from './cleaners/skyblock/member'
+import { ensureFullMemberProfile } from './cleaners/skyblock/member.js'
 
 const app = express()
 

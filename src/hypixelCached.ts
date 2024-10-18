@@ -12,13 +12,12 @@ import NodeCache from 'node-cache'
 import LRUCache from 'lru-cache'
 import { CleanBasicMember } from './cleaners/skyblock/member.js'
 
-// cache usernames for 30 minutes
-
-const cacheDebug = true
+// In future, worth logging cache hits/misses to grafana
+const cacheDebug = false
 
 /** uuid: username */
 export const usernameCache = new NodeCache({
-	// stdTTL: 60 * 60 * 4,
+	// cache usernames for 30 minutes
 	stdTTL: 60 * 30,
 	checkperiod: 60,
 	useClones: false,

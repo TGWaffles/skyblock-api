@@ -57,6 +57,7 @@ export const profilesCache = new NodeCache({
 })
 
 export const profileNameCache = new NodeCache({
+	// 1 hour, very unlikely that a profile name will change
 	stdTTL: 60 * 60,
 	checkperiod: 60,
 	useClones: false,
@@ -252,8 +253,9 @@ export async function fetchSkyblockProfiles(playerUuid: string): Promise<CleanPr
 
 	const basicProfiles: CleanProfile[] = []
 
-	// create the basicProfiles array
+	// create the basicProfiles array and cache individual profiles
 	for (const profile of profiles) {
+		profileCache.set(profile.uuid, profile)
 		const basicProfile: CleanProfile = {
 			name: profile.name,
 			uuid: profile.uuid,

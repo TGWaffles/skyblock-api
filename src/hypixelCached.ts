@@ -328,16 +328,16 @@ export async function fetchProfileUuid(user: string, profile: string): Promise<s
 		return null
 	}
 
-	if (debug) console.debug('Cache miss: fetchProfileUuid', user, profile)
-
-	const profiles = await fetchBasicProfiles(user)
-	if (!profiles) return null // user probably doesnt exist
-
 	const profileUuid = undashUuid(profile)
 	if (isUuid(profileUuid)) {
 		// if the profile is already a uuid, just return it
 		return profileUuid
 	}
+
+	if (debug) console.debug('Cache miss: fetchProfileUuid', user, profile)
+
+	const profiles = await fetchBasicProfiles(user)
+	if (!profiles) return null // user probably doesnt exist
 
 	for (const p of profiles) {
 		if (p.name?.toLowerCase() === profileUuid.toLowerCase())

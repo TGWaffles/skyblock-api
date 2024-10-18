@@ -13,7 +13,7 @@ const apiKeyCounter = new Gauge({
 	registers: [ register ],
 	collect() {
 		let keyUsage = getKeyUsage()
-		apiKeyCounter.set(keyUsage.usage)
+		apiKeyCounter.set(keyUsage.lastMinute)
 	}
 })
 const connectionsCounter = new Gauge({

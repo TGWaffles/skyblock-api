@@ -1,6 +1,7 @@
 import typedHypixelApi from 'typed-hypixel-api'
 import { fetchSkills } from '../../constants.js'
 import { levelFromXpTable } from '../../util.js'
+import { fetchPlayer } from '../../hypixelCached.js'
 import * as constants from '../../constants.js'
 import { CleanFullPlayer } from '../player.js'
 
@@ -194,7 +195,15 @@ function skillsFromSkyBlockAchievements(achievements: CleanFullPlayer['achieveme
 	}
 }
 
-export async function cleanSkills(data: typedHypixelApi.SkyBlockProfileMember, player: CleanFullPlayer): Promise<Skills> {
+export async function ensureFullSkills(playerUuid: string): Promise<Skills | null> {
+	const player = await fetchPlayer(playerUuid)
+	if (player) {
+		return skillsFromSkyBlockAchievements(player.achievements)
+	}
+	return null;
+}
+
+export async function cleanSkills(data: typedHypixelApi.SkyBlockProfileMember & { uuid: string }): Promise<Skills | null> {
 	const allSkillNames = await fetchSkills()
 	const skills: Skill[] = []
 
@@ -245,7 +254,8 @@ export async function cleanSkills(data: typedHypixelApi.SkyBlockProfileMember, p
 	// if the player has no skills but has kills, we can assume they have the skills api off
 	// (we check kills to know whether the profile is actually used, this is kinda arbitrary)
 	if (skills.length === 0 && 'stats' in data && Object.keys(data.stats).includes('kills')) {
-		return skillsFromSkyBlockAchievements(player.achievements)
+		// Can fetch full player at a later date, return null to show we didn't find any.
+		return null;
 	}
 
 	constants.addSkills(skillNamesFound)

@@ -13,7 +13,7 @@ import { cleanSlayers, SlayerData } from './slayers.js'
 import { AccountCustomization } from '../../database.js'
 import { cleanEssence, Essence } from './essence.js'
 import { cleanVisitedZones, Zone } from './zones.js'
-import { cleanSkills, Skills } from './skills.js'
+import { cleanSkills, ensureFullSkills, Skills } from './skills.js'
 import * as cached from '../../hypixelCached.js'
 import typedHypixelApi from 'typed-hypixel-api'
 import { cleanPets, PetsData } from './pets.js'
@@ -40,7 +40,7 @@ interface ExtraCleanMemberFields {
 	fairySouls: FairySouls
 	inventories?: Inventories
 	objectives: Objective[]
-	skills: Skills
+	skills: Skills | null
 	zones: Zone[]
 	collections: Collection[]
 	slayers: SlayerData
@@ -59,7 +59,7 @@ interface ExtraCleanMemberFields {
 export type CleanMember = CleanBasicMember & ExtraCleanMemberFields
 
 export async function cleanSkyBlockProfileMemberResponseBasic(member: typedHypixelApi.SkyBlockProfileMember & { uuid: string }): Promise<CleanBasicMember | null> {
-	const player = await cached.fetchPlayer(member.uuid, false)
+	const player = await cached.fetchBasicPlayer(member.uuid)
 	if (!player) return null
 	return {
 		uuid: member.uuid,
@@ -73,7 +73,7 @@ export async function cleanSkyBlockProfileMemberResponseBasic(member: typedHypix
 /** Cleans up a member (from skyblock/profile) */
 export async function cleanSkyBlockProfileMemberResponse(member: typedHypixelApi.SkyBlockProfileMember & { uuid: string }, profileId?: string, included: Included[] | undefined = undefined): Promise<CleanMember | null> {
 	const inventoriesIncluded = included === undefined || included.includes('inventories')
-	const player = await cached.fetchPlayer(member.uuid, true)
+	const player = await cached.fetchBasicPlayer(member.uuid)
 	if (!player) return null
 
 	const fairySouls = await cleanFairySouls(member)
@@ -84,7 +84,7 @@ export async function cleanSkyBlockProfileMemberResponse(member: typedHypixelApi
 
 	const coopInvitationPromise = cleanCoopInvitation(member, member.uuid)
 	const minionsPromise = cleanMinions(member)
-	const skillsPromise = cleanSkills(member, player)
+	const skillsPromise = cleanSkills(member)
 	const zonesPromise = cleanVisitedZones(member)
 	const petsPromise = cleanPets(member)
 	const harpPromise = cleanHarp(member)
@@ -130,6 +130,7 @@ export async function cleanSkyBlockProfileMemberResponse(member: typedHypixelApi
 }
 
 
+
 export type CleanMemberProfilePlayer = CleanPlayer & {
 	// The profile name may be different for each player, so we put it here
 	profileName: string
@@ -141,4 +142,11 @@ export interface CleanMemberProfile {
 	member: CleanMemberProfilePlayer
 	profile: CleanFullProfileBasicMembers
 	customization?: AccountCustomization
+}
+
+/** Allows for lazy-loading skills from /player endpoint if not needed. */
+export async function ensureFullMemberProfile(profile: CleanMemberProfile) {
+	if (profile.member.skills === null) {
+		profile.member.skills = await ensureFullSkills(profile.member.uuid)
+	}
 }

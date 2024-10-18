@@ -29,7 +29,7 @@ export async function cleanSkyblockProfilesResponse(
 
     const promises: Promise<CleanFullProfile | null>[] = []
     for (const profile of data) {
-        promises.push(cleanSkyblockProfileResponse(profile, options))
+        promises.push(cleanSkyblockProfileResponse(profile))
     }
     const cleanedProfiles: CleanFullProfile[] = (await Promise.all(promises)).filter((p): p is CleanFullProfile => p !== null)
     return cleanedProfiles

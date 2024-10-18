@@ -7,6 +7,7 @@ import express from 'express'
 import { getKeyUsage } from './hypixelApi.js'
 import { basicPlayerCache, basicProfilesCache, playerCache, profileCache, profileNameCache, profilesCache, usernameCache } from './hypixelCached.js'
 import { register } from './metrics.js'
+import { ensureFullMemberProfile } from './cleaners/skyblock/member'
 
 const app = express()
 
@@ -22,15 +23,24 @@ const limiter = rateLimit({
 		return req.headers.key === process.env.key
 	},
 	keyGenerator: (req: express.Request) => {
-		return (req.headers['cf-connecting-ip'] ?? req.ip).toString()
+		// @ts-ignore
+		return (getIp(req)).toString()
 	}
 })
+
+function getIp(req: express.Request) {
+	if (req.headers.key === process.env.key && req.headers["client-address"]) {
+		// server-side request
+		return req.headers["client-address"]
+	}
+	return req.headers['cf-connecting-ip'] ?? req.ip
+}
 
 app.use(limiter)
 app.use(express.json())
 app.use((req, res, next) => {
-	const ip = req.headers['cf-connecting-ip'] ?? req.ip
-	console.log(`${ip} ${req.method} ${req.path}`)
+	const ip = getIp(req)
+	console.log(`${ip} ${req.method} ${req.path} (agent: ${req.headers['user-agent'] ?? 'none'})`)
 	res.setHeader('Access-Control-Allow-Origin', '*')
 	res.setHeader('Access-Control-Allow-Headers', '*')
 	next()
@@ -90,10 +100,12 @@ app.get('/discord/:id', async (req, res) => {
 app.get('/player/:user/:profile', async (req, res) => {
 	try {
 		const profile = await fetchMemberProfile(req.params.user, req.params.profile, req.query.customization as string === 'true')
-		if (profile)
+		if (profile) {
+			await ensureFullMemberProfile(profile)
 			res.json(profile)
-		else
+		} else {
 			res.status(404).json({ error: true })
+		}
 	} catch (err) {
 		console.error(err)
 		res.json({ error: true })

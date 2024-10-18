@@ -5,69 +5,48 @@ import { shuffle, sleep } from './util.js'
 import typedHypixelApi from 'typed-hypixel-api'
 import { Agent } from 'https'
 
-if (!process.env.hypixel_keys)
-	// if there's no hypixel keys in env, run dotenv
+if (!process.env.hypixel_key)
+	// if there's no hypixel key in env, run dotenv
 	(await import('dotenv')).config({path: process.env.ENV_FILE ? process.env.ENV_FILE : '.env'})
 
 
 /** This array should only ever contain one item because using multiple hypixel api keys isn't allowed :) */
-const apiKeys = process.env?.hypixel_keys?.split(' ') ?? []
+let apiKey = process.env?.hypixel_key
 
-if (apiKeys.length === 0) {
+if (apiKey === undefined || apiKey.length === 0) {
 	console.warn('Warning: hypixel_keys was not found in .env. This will prevent the program from using the Hypixel API.')
+}
+
+export function getApiKey() {
+	return apiKey
 }
 
 interface KeyUsage {
 	remaining: number
 	limit: number
 	reset: number
+	inflight: number
 }
 
-const apiKeyUsage: { [key: string]: KeyUsage } = {}
+const apiKeyUsage: KeyUsage = {
+	remaining: 300,
+	limit: 300,
+	// reset in 300s
+	reset: Date.now() + 300*1000,
+	inflight: 0
+}
 // the usage amount the api key was on right before it reset
-const apiKeyMaxUsage: { [key: string]: number } = {}
+let apiKeyMaxUsage: number = 0
 
-
-/** Choose the best current API key */
-export function chooseApiKey(): string | null {
-	// find the api key with the lowest amount of uses
-	let bestKeyUsage: KeyUsage | null = null
-	let bestKey: string | null = null
-	// we limit to 5 api keys because otherwise they get automatically banned
-	for (let key of shuffle(apiKeys.slice(0, 5))) {
-		const keyUsage = apiKeyUsage[key]
-
-		// if the key has never been used before, use it
-		if (!keyUsage) return key
-
-		// if the key has reset since the last use, set the remaining count to the default
-		if (Date.now() > keyUsage.reset) {
-			apiKeyMaxUsage[key] = keyUsage.limit - keyUsage.remaining
-			keyUsage.remaining = keyUsage.limit
-		}
-
-		// if this key has more uses remaining than the current known best one, save it
-		if (bestKeyUsage === null || keyUsage.remaining > bestKeyUsage.remaining) {
-			bestKeyUsage = keyUsage
-			bestKey = key
-		}
-	}
-	return bestKey
-}
 
 export function getKeyUsage() {
-	let keyLimit = 0
-	let keyUsage = 0
-	for (let key of Object.keys(apiKeyMaxUsage)) {
-		// if the key isn't in apiKeyUsage, continue
-		if (!apiKeyUsage[key]) continue
-
-		keyUsage += apiKeyMaxUsage[key]
-		keyLimit += apiKeyUsage[key].limit
-	}
 	return {
-		limit: keyLimit,
-		usage: keyUsage
+		limit: apiKeyUsage.limit,
+		remaining: apiKeyUsage.remaining,
+		reset: apiKeyUsage.reset,
+		maxUsage: apiKeyMaxUsage,
+		lastMinute: requestTimestamps.filter(timestamp => timestamp.getTime() > Date.now() - 60000).length,
+		inFlight: apiKeyUsage.inflight
 	}
 }
 
@@ -99,6 +78,21 @@ export interface HypixelPlayerSocialMedia {
 	}
 }
 
+async function waitForRateLimit() {
+	while (apiKeyUsage.remaining - apiKeyUsage.inflight < 2) {
+		// ran out / about to run out of requests.
+		if (apiKeyUsage.reset < Date.now()) {
+			// reset time has passed
+			apiKeyUsage.remaining = apiKeyUsage.limit
+			apiKeyUsage.reset = Date.now() + 300 * 1000
+		}
+		await sleep(Date.now() - apiKeyUsage.reset)
+	}
+	// add this request as inflight
+	apiKeyUsage.inflight++
+	// proceed with request
+}
+
 /**
  * A list of Dates for requests that were sent in the past 60 seconds.
  * This is used for calculating the approximate request count.
@@ -112,19 +106,24 @@ export let sendApiRequest = async<P extends keyof typedHypixelApi.Requests>(
 	options: typedHypixelApi.Requests[P]['options'],
 	attemptCount = 0
 ): Promise<typedHypixelApi.Requests[P]['response']['data']> => {
+	if ('key' in options) {
+		if (options.key == null) {
+			throw new Error('No Hypixel API key found')
+		}
+		// Ensure we haven't passed the rate limit
+		await waitForRateLimit()
+	}
 	const optionsWithoutKey: any = { ...options }
 	if ('key' in optionsWithoutKey) delete optionsWithoutKey.key
-	console.log(`Sending API request to ${path} with options ${JSON.stringify(optionsWithoutKey)}`)
+	console.log(`Sending API request to ${path} with options ${JSON.stringify(optionsWithoutKey)}. Rate limit remaining: ${apiKeyUsage.remaining}`)
 
 	// rate calculation
-	if (attemptCount === 0) {
-		requestTimestamps.push(new Date())
-		requestTimestamps = requestTimestamps.filter(timestamp => timestamp.getTime() > Date.now() - 60000)
-		// log every minute
-		if (Date.now() > lastRateLog + 60000) {
-			lastRateLog = Date.now()
-			console.info(`${requestTimestamps.length} Hypixel API requests in past minute`)
-		}
+	requestTimestamps.push(new Date())
+	requestTimestamps = requestTimestamps.filter(timestamp => timestamp.getTime() > Date.now() - 60000)
+	// log every minute
+	if (Date.now() > lastRateLog + 60000) {
+		lastRateLog = Date.now()
+		console.info(`${requestTimestamps.length} Hypixel API requests in past minute`)
 	}
 
 	// Send a raw http request to api.hypixel.net, and return the parsed json
@@ -135,9 +134,11 @@ export let sendApiRequest = async<P extends keyof typedHypixelApi.Requests>(
 			options
 		)
 	} catch (e) {
-		console.log(`Error sending API request to ${path} with options ${JSON.stringify(optionsWithoutKey)}, retrying in a scond`)
+		console.log(`Error ${e} sending API request to ${path} with options ${JSON.stringify(optionsWithoutKey)}, retrying in a scond`)
 		await sleep(1000)
 		return await sendApiRequest(path, options, attemptCount + 1)
+	} finally {
+		apiKeyUsage.inflight--
 	}
 
 	if (!response.data.success) {
@@ -148,48 +149,48 @@ export let sendApiRequest = async<P extends keyof typedHypixelApi.Requests>(
 			return await sendApiRequest(path, options, attemptCount + 1)
 		}
 
-		// if the cause is "Invalid API key", remove the key from the list of keys and try again
 		if ('key' in options && response.data.cause === 'Invalid API key') {
-			if (apiKeys.includes(options.key)) {
-				apiKeys.splice(apiKeys.indexOf(options.key), 1)
-				console.log(`${options.key} is invalid, removing it from the list of keys`)
-			}
-			return await sendApiRequest(path, {
-				...options,
-				key: chooseApiKey()
-			}, attemptCount + 1)
+			apiKey = ''
+			throw new Error('Invalid API key')
 		}
 
 		console.log(`API request to ${path} with options ${JSON.stringify(optionsWithoutKey)} was not successful: ${JSON.stringify(response.data)}`)
 	}
 
 	if ('key' in options && response.headers['ratelimit-limit']) {
-		// remember how many uses it has
-		apiKeyUsage[options.key] = {
-			remaining: response.headers['ratelimit-remaining'] ?? 0,
-			limit: response.headers['ratelimit-limit'] ?? 0,
-			reset: Date.now() + response.headers['ratelimit-reset'] ?? 0 * 1000 + 1000,
+		if (response.headers['ratelimit-remaining']) {
+			apiKeyUsage.remaining = response.headers['ratelimit-remaining']
 		}
-
-		let usage = apiKeyUsage[options.key].limit - apiKeyUsage[options.key].remaining
+		if (response.headers['ratelimit-limit']) {
+			apiKeyUsage.limit = response.headers['ratelimit-limit']
+		}
+		if (response.headers['ratelimit-reset']) {
+			apiKeyUsage.reset = Date.now() + response.headers['ratelimit-reset'] * 1000 + 1000
+		}
+		// remember how many uses it has
+		let usage = apiKeyUsage.limit - apiKeyUsage.remaining
 		// if it's not in apiKeyMaxUsage or this usage is higher, update it
-		if (!apiKeyMaxUsage[options.key] || (usage > apiKeyMaxUsage[options.key]))
-			apiKeyMaxUsage[options.key] = usage
+		if (usage > apiKeyMaxUsage) {
+			apiKeyMaxUsage = usage
+		}
 	}
 
 	if ('key' in options && !response.data.success && 'throttle' in response.data && response.data.throttle) {
-		if (apiKeyUsage[options.key]) {
-			apiKeyUsage[options.key].remaining = 0
-		}
+			apiKeyUsage.remaining = 0
 
 		if (attemptCount > 3) {
 			console.log(`API request to ${path} with options ${JSON.stringify(optionsWithoutKey)} was throttled too many times, giving up`)
 			throw new Error('Throttled')
 		}
 
-		// if it's throttled, wait 10 seconds and try again
-		console.log(`API request to ${path} with options ${JSON.stringify(optionsWithoutKey)} was throttled, retrying in 10 seconds`)
-		await sleep(10000)
+		// if it's throttled, wait until ratelimit reset & try again
+		let timeToWait = (apiKeyUsage.reset - Date.now())
+		if (timeToWait < 0) {
+			// Wait 10 seconds minimum.
+			timeToWait = 10*1000
+		}
+		console.log(`API request to ${path} with options ${JSON.stringify(optionsWithoutKey)} was throttled, retrying in ${timeToWait/1000} seconds`)
+		await sleep(timeToWait)
 		return await sendApiRequest(path, options, attemptCount + 1)
 	}
 	return response.data

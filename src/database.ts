@@ -231,6 +231,10 @@ function getMemberCollectionAttributes(member: CleanMember): StringNumber {
 }
 
 function getMemberSkillAttributes(member: CleanMember): StringNumber {
+	if (member.skills == null) {
+		// skills api disabled, didn't load from player
+		return {}
+	}
 	if (!member.skills.apiEnabled) return {}
 	const skillAttributes = {}
 	for (const collection of member.skills.list) {

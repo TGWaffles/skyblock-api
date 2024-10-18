@@ -3,11 +3,11 @@
  */
 
 import {
-	cleanSkyblockProfileResponse,
-	CleanProfile,
 	CleanBasicProfile,
 	CleanFullProfile,
-	CleanFullProfileBasicMembers
+	CleanFullProfileBasicMembers,
+	CleanProfile,
+	cleanSkyblockProfileResponse,
 } from './cleaners/skyblock/profile.js'
 import {
 	AccountCustomization,
@@ -20,14 +20,14 @@ import {
 	queueUpdateDatabaseProfile,
 	removeDeletedProfilesFromLeaderboards,
 	SimpleAuctionSchema,
-	updateItemAuction
+	updateItemAuction,
 } from './database.js'
 import { cleanElectionResponse, ElectionData } from './cleaners/skyblock/election.js'
 import { cleanItemListResponse } from './cleaners/skyblock/itemList.js'
 import { CleanBasicMember, CleanMemberProfile } from './cleaners/skyblock/member.js'
 import { cleanSkyblockProfilesResponse } from './cleaners/skyblock/profiles.js'
-import { CleanPlayer, cleanPlayerResponse } from './cleaners/player.js'
-import { chooseApiKey, sendApiRequest } from './hypixelApi.js'
+import { CleanFullPlayer, CleanPlayer, cleanPlayerResponse } from './cleaners/player.js'
+import { getApiKey, sendApiRequest } from './hypixelApi.js'
 import typedHypixelApi from 'typed-hypixel-api'
 import * as cached from './hypixelCached.js'
 import { debug } from './index.js'
@@ -47,16 +47,13 @@ export const saveInterval = 60 * 3 * 1000
  */
 
 export interface ApiOptions {
-	mainMemberUuid?: string
-	/** Only get the most basic information, like uuids and names */
-	basic?: boolean
 	/** Some endpoints have pagination */
 	page?: number
 }
 
 /** Sends an API request to Hypixel and returns the response. */
 export async function sendUncleanApiRequest<P extends keyof typedHypixelApi.Requests>(path: P, args: Omit<typedHypixelApi.Requests[P]['options'], 'key'>): Promise<typedHypixelApi.Requests[P]['response']['data']> {
-	const key = await chooseApiKey()
+	const key = getApiKey()
 	const data = await sendApiRequest(path, { key, ...args })
 	if (!data)
 		throw new Error(`No data returned from ${path}`)
@@ -71,7 +68,7 @@ export async function sendCleanApiRequest<P extends keyof typeof cleanResponseFu
 
 const cleanResponseFunctions = {
 	'player': (data, options) => cleanPlayerResponse(data.player),
-	'v2/skyblock/profile': (data: typedHypixelApi.SkyBlockProfileResponse, options) => cleanSkyblockProfileResponse(data.profile, options),
+	'v2/skyblock/profile': (data: typedHypixelApi.SkyBlockProfileResponse, options) => cleanSkyblockProfileResponse(data.profile),
 	'v2/skyblock/profiles': (data, options) => cleanSkyblockProfilesResponse(data.profiles, options),
 	'skyblock/auctions_ended': (data, options) => cleanEndedAuctions(data),
 	'skyblock/auction': (data, options) => cleanAuctions(data, options.page ?? 0),
@@ -138,13 +135,15 @@ export async function fetchUser({ user, uuid, username }: UserAny, included: Inc
 	let playerData: CleanPlayer | null = null
 
 	if (includePlayers) {
-		playerData = await cached.fetchPlayer(uuid, true)
+		playerData = await cached.fetchBasicPlayer(uuid)
 		// if not including profiles, include lightweight profiles just in case
-		if (!includeProfiles)
+		if (!includeProfiles) {
 			basicProfilesData = playerData?.profiles
+		}
 		// we don't want the `profiles` field in `player`
-		if (playerData)
+		if (playerData) {
 			delete playerData.profiles
+		}
 	}
 	if (includeProfiles)
 		profilesData = await cached.fetchSkyblockProfiles(uuid) ?? []
@@ -197,7 +196,7 @@ export async function fetchMemberProfile(user: string, profile: string, customiz
 	if (!profileUuid) return null
 	if (!playerUuid) return null
 
-	const player: CleanPlayer | null = await cached.fetchPlayer(playerUuid, true)
+	const player: CleanFullPlayer | null = await cached.fetchPlayer(playerUuid)
 
 	if (!player) return null // this should never happen, but if it does just return null
 
@@ -245,14 +244,12 @@ export async function fetchMemberProfile(user: string, profile: string, customiz
 
 /**
  * Fetches the Hypixel API to get a CleanFullProfile. This doesn't do any caching and you should use hypixelCached.fetchProfile instead
- * @param playerUuid The UUID of the Minecraft player
  * @param profileUuid The UUID of the Hypixel SkyBlock profile
  */
-export async function fetchMemberProfileUncached(playerUuid: string, profileUuid: string): Promise<null | CleanFullProfile> {
+export async function fetchMemberProfileUncached(profileUuid: string): Promise<null | CleanFullProfile> {
 	const profile = await sendCleanApiRequest(
 		'v2/skyblock/profile',
 		{ profile: profileUuid },
-		{ mainMemberUuid: playerUuid }
 	)
 
 	// we check for minions in profile to filter out the CleanProfile type (as opposed to CleanFullProfile)
@@ -273,13 +270,10 @@ export async function fetchMemberProfileUncached(playerUuid: string, profileUuid
  * @param profileUuid The UUID of the Hypixel SkyBlock profile
  */
 export async function fetchBasicProfileFromUuidUncached(profileUuid: string): Promise<CleanProfile | null> {
-	const profile = await sendCleanApiRequest(
+	return await sendCleanApiRequest(
 		'v2/skyblock/profile',
 		{ profile: profileUuid },
-		{ basic: true }
 	)
-
-	return profile
 }
 
 
@@ -287,10 +281,6 @@ export async function fetchMemberProfilesUncached(playerUuid: string): Promise<C
 	const profiles = await sendCleanApiRequest(
 		'v2/skyblock/profiles',
 		{ uuid: playerUuid },
-		{
-			// only the inventories for the main player are generated, this is for optimization purposes
-			mainMemberUuid: playerUuid
-		}
 	)
 	if (profiles === null)
 		return null

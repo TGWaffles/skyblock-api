@@ -53,9 +53,8 @@ export async function cleanSkyblockProfileResponseLighter(data: typedHypixelApi.
  * This function is somewhat costly and shouldn't be called often. Use cleanSkyblockProfileResponseLighter if you don't need all the data
  */
 export async function cleanSkyblockProfileResponse<O extends ApiOptions>(
-    data: typedHypixelApi.SkyBlockProfile | typedHypixelApi.SkyBlockProfilesResponse['profiles'][number],
-    options?: O
-): Promise<(O['basic'] extends true ? CleanProfile : CleanFullProfile) | null> {
+    data: typedHypixelApi.SkyBlockProfile | typedHypixelApi.SkyBlockProfilesResponse['profiles'][number]
+): Promise<CleanFullProfile | null> {
     // We use Promise.all so it can fetch all the users at once instead of waiting for the previous promise to complete
     const promises: Promise<CleanMember | null>[] = []
     if (!data) return null
@@ -69,8 +68,8 @@ export async function cleanSkyblockProfileResponse<O extends ApiOptions>(
             memberRawWithUuid,
             profileId,
             [
-                !options?.basic ? 'stats' : undefined,
-                options?.mainMemberUuid === memberUUID ? 'inventories' : undefined
+                'stats',
+                'inventories'
             ]
         ))
     }
@@ -81,23 +80,6 @@ export async function cleanSkyblockProfileResponse<O extends ApiOptions>(
     // sometimes it's ms since epoch and sometimes it's a string, so we
     // just throw it into new Date() and js will figure it out for us
     const lastSave = data.last_save ? (new Date(data.last_save).getTime()) : undefined
-    // also set the lastSave in the member if options.mainMemberUuid matches
-    if (options?.mainMemberUuid) {
-        const mainMember = cleanedMembers.find(m => m.uuid === options.mainMemberUuid)
-        if (mainMember) mainMember.lastSave = lastSave ?? null
-    }
-
-    if (options?.basic) {
-        const cleanProfile: CleanProfile = {
-            uuid: profileId,
-            name: 'cute_name' in data ? data.cute_name : undefined,
-            members: cleanedMembers,
-            mode: cleanGameMode(data),
-            lastSave
-        }
-        // we have to do this because of the basic checking typing
-        return cleanProfile as any
-    }
 
     const memberMinions: CleanMinion[][] = []
 

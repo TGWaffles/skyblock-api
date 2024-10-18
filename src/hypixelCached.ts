@@ -2,18 +2,19 @@
  * Fetch the clean and cached Hypixel API
  */
 
-import { CleanProfile, CleanFullProfile, CleanBasicProfile } from './cleaners/skyblock/profile.js'
+import { CleanBasicProfile, CleanFullProfile, CleanProfile } from './cleaners/skyblock/profile.js'
 import { isUuid, sleep, undashUuid, withCache } from './util.js'
 import { CleanFullPlayer, CleanPlayer } from './cleaners/player.js'
 import * as hypixel from './hypixel.js'
+import { sendUncleanApiRequest } from './hypixel.js'
 import * as mojang from './mojang.js'
 import NodeCache from 'node-cache'
-import { debug } from './index.js'
 import LRUCache from 'lru-cache'
 import { CleanBasicMember } from './cleaners/skyblock/member.js'
-import { sendUncleanApiRequest } from './hypixel.js'
 
 // cache usernames for 30 minutes
+
+const cacheDebug = true
 
 /** uuid: username */
 export const usernameCache = new NodeCache({
@@ -26,26 +27,29 @@ export const usernameCache = new NodeCache({
 usernameCache.setMaxListeners(200)
 
 
+// stores player's profile uuids and names for 30 minutes
 export const basicProfilesCache = new NodeCache({
-	stdTTL: 60 * 10,
+	stdTTL: 60 * 30,
 	checkperiod: 60,
 	useClones: true,
 })
 
+// full player data with achievements, store for 5 minutes.
 export const playerCache = new NodeCache({
-	stdTTL: 60,
+	stdTTL: 60 * 5,
 	checkperiod: 10,
 	useClones: true,
 })
 
-// cache "basic players" (players without profiles) for 20 minutes
+// cache "basic players" (players without achievements) for 60 minutes
+// Mainly used for player rank, username & profiles.
 export const basicPlayerCache: LRUCache<string, CleanPlayer> = new LRUCache({
+	ttl: 60 * 60 * 1000,
 	max: 10000,
-	ttl: 60 * 20 * 1000,
 })
 
 export const profileCache = new NodeCache({
-	stdTTL: 30,
+	stdTTL: 60,
 	checkperiod: 10,
 	useClones: true,
 })
@@ -115,7 +119,7 @@ export async function uuidFromUser(user: string): Promise<string | undefined> {
 			return uuid
 	}
 
-	if (debug) console.debug('Cache miss: uuidFromUser', user)
+	if (cacheDebug) console.debug('Cache miss: uuidFromUser', user)
 
 	const undashedUser = undashUuid(user)
 
@@ -144,11 +148,11 @@ export async function uuidFromUser(user: string): Promise<string | undefined> {
  */
 export async function usernameFromUser(user: string): Promise<string | null> {
 	if (usernameCache.has(undashUuid(user))) {
-		if (debug) console.debug('Cache hit! usernameFromUser', user)
+		if (cacheDebug) console.debug('Cache hit! usernameFromUser', user)
 		return usernameCache.get(undashUuid(user)) ?? null
 	}
 
-	if (debug) console.debug('Cache miss: usernameFromUser', user)
+	if (cacheDebug) console.debug('Cache miss: usernameFromUser', user)
 
 	let { uuid, username } = await mojang.profileFromUser(user)
 	if (!uuid) return null
@@ -169,21 +173,22 @@ function cleanFullPlayerToCleanPlayer(player: CleanFullPlayer): CleanPlayer {
 	}
 }
 
-export async function fetchPlayer<Full extends boolean = true>(user: string, full: Full): Promise<(Full extends true ? CleanFullPlayer : CleanPlayer) | null> {
+export async function fetchPlayer(user: string): Promise<CleanFullPlayer | null> {
 	const playerUuid = await uuidFromUser(user)
 	if (!playerUuid) return null
 
 	if (playerCache.has(playerUuid)) {
-		const player: CleanFullPlayer = playerCache.get(playerUuid)!
-		return full ? player : cleanFullPlayerToCleanPlayer(player) as any
+		if (cacheDebug) console.debug('Cache hit! fetchPlayer', playerUuid)
+		return playerCache.get(playerUuid)!
 	}
+	if (cacheDebug) console.debug('Cache miss: fetchPlayer', playerUuid)
 
 	// if it's already in the process of fetching, check every 100ms until it's not fetching the player anymore and fetch it again, since it'll be cached now
 	if (fetchingPlayers.has(playerUuid)) {
 		while (fetchingPlayers.has(playerUuid)) {
 			await sleep(100)
 		}
-		return await fetchPlayer(user, full)
+		return await fetchPlayer(user)
 	}
 
 	fetchingPlayers.add(playerUuid)
@@ -199,62 +204,56 @@ export async function fetchPlayer<Full extends boolean = true>(user: string, ful
 	playerCache.set(playerUuid, cleanPlayer)
 	usernameCache.set(playerUuid, cleanPlayer.username)
 
+	for (const profile of cleanPlayer.profiles ?? []) {
+		profileNameCache.set(`${playerUuid}.${profile.uuid}`, profile.name)
+	}
+
 	// clone in case it gets modified somehow later
 	const clonedCleanPlayer = Object.assign({}, cleanPlayer)
-	const cleanBasicPlayer: CleanPlayer = {
-		rank: clonedCleanPlayer.rank,
-		socials: clonedCleanPlayer.socials,
-		username: clonedCleanPlayer.username,
-		uuid: clonedCleanPlayer.uuid,
-		profiles: clonedCleanPlayer.profiles
-	}
-	if (cleanBasicPlayer.profiles) {
-		// remove the names from the profiles so we only keep uuids
-		// this helps save a bit of memory since we don't care about the names
-		cleanBasicPlayer.profiles = cleanBasicPlayer.profiles.map(p => ({ uuid: p.uuid }))
-	}
+	const cleanBasicPlayer: CleanPlayer = cleanFullPlayerToCleanPlayer(clonedCleanPlayer)
 	basicPlayerCache.set(playerUuid, cleanBasicPlayer)
 
-	return full ? cleanPlayer : cleanFullPlayerToCleanPlayer(cleanPlayer) as any
+	return cleanPlayer
 }
 
-/** Fetch a player without their profiles. This is heavily cached. */
+/** Fetch a player without their achievements. This is heavily cached. */
 export async function fetchBasicPlayer(user: string): Promise<CleanPlayer | null> {
 	const playerUuid = await uuidFromUser(user)
 
 	if (!playerUuid) return null
 
 	if (basicPlayerCache.has(playerUuid)) {
-		const player = basicPlayerCache.get(playerUuid)!
-		return player
+		if (cacheDebug) console.debug('Cache hit! fetchBasicPlayer', playerUuid)
+		return basicPlayerCache.get(playerUuid)!
 	}
+	if (cacheDebug) console.debug('Cache miss: fetchBasicPlayer', playerUuid)
 
-	const player = await fetchPlayer(playerUuid, false)
+	// Also caches it in future for us.
+	const player = await fetchPlayer(playerUuid)
 	if (!player) {
 		console.debug('no player? this should never happen, perhaps the uuid is invalid or the player hasn\'t played hypixel', playerUuid)
 		return null
 	}
-
-	delete player.profiles
-	return player
+	return cleanFullPlayerToCleanPlayer(player)
 }
 
 export async function fetchSkyblockProfiles(playerUuid: string): Promise<CleanProfile[] | null> {
 	if (profilesCache.has(playerUuid)) {
-		if (debug) console.debug('Cache hit! fetchSkyblockProfiles', playerUuid)
+		if (cacheDebug) console.debug('Cache hit! fetchSkyblockProfiles', playerUuid)
 		return profilesCache.get(playerUuid)!
 	}
 
-	if (debug) console.debug('Cache miss: fetchSkyblockProfiles', playerUuid)
+	if (cacheDebug) console.debug('Cache miss: fetchSkyblockProfiles', playerUuid)
 
 	const profiles = await hypixel.fetchMemberProfilesUncached(playerUuid)
 	if (profiles === null)
 		return null
 
-	const basicProfiles: CleanProfile[] = []
+	const cleanProfiles: CleanProfile[] = []
 
-	// create the basicProfiles array and cache individual profiles
+	// create the cleanProfiles array and cache individual profiles
 	for (const profile of profiles) {
+		profileNameCache.set(`${playerUuid}.${profile.uuid}`, profile.name)
 		profileCache.set(profile.uuid, profile)
 		const basicProfile: CleanProfile = {
 			name: profile.name,
@@ -271,20 +270,28 @@ export async function fetchSkyblockProfiles(playerUuid: string): Promise<CleanPr
 			}),
 			mode: profile.mode
 		}
-		basicProfiles.push(basicProfile)
+		cleanProfiles.push(basicProfile)
 	}
 
-	basicProfiles.sort((a, b) => {
+	cleanProfiles.sort((a, b) => {
 		const memberA = a.members?.find(m => m.uuid === playerUuid)
 		const memberB = b.members?.find(m => m.uuid === playerUuid)
 
 		return (memberB?.lastSave ?? 0) - (memberA?.lastSave ?? 0)
 	})
 
-	// cache the profiles
-	profilesCache.set(playerUuid, basicProfiles)
+	const basicProfiles: CleanBasicProfile[] = cleanProfiles.map(p => {
+		return {
+			name: p.name,
+			uuid: p.uuid
+		}
+	})
 
-	return basicProfiles
+	// cache the profiles
+	profilesCache.set(playerUuid, cleanProfiles)
+	basicProfilesCache.set(playerUuid, basicProfiles)
+
+	return cleanProfiles
 }
 
 /** Fetch an array of `BasicProfile`s */
@@ -294,18 +301,28 @@ async function fetchBasicProfiles(user: string): Promise<CleanBasicProfile[] | n
 	if (!playerUuid) return null // invalid player, just return
 
 	if (basicProfilesCache.has(playerUuid)) {
-		if (debug) console.debug('Cache hit! fetchBasicProfiles', playerUuid)
+		if (cacheDebug) console.debug('Cache hit! fetchBasicProfiles', playerUuid)
 		return basicProfilesCache.get(playerUuid)!
 	}
+	if (cacheDebug) console.debug('Cache miss: fetchBasicProfiles', user)
 
-	if (debug) console.debug('Cache miss: fetchBasicProfiles', user)
-
-	const player = await fetchPlayer(playerUuid, false)
-	if (!player) {
-		// this happens when the player changed their name recently and the old name is cached on hypixel
-		return []
+	if (basicPlayerCache.has(playerUuid)) {
+		const basicPlayer = await fetchBasicPlayer(user)
+		if (basicPlayer != null && basicPlayer.profiles != null) {
+			return basicPlayer.profiles
+		}
 	}
-	const profiles = player.profiles
+
+	const cleanProfiles = await fetchSkyblockProfiles(playerUuid)
+
+	const profiles: CleanBasicProfile[] = []
+	for (const profile of cleanProfiles ?? []) {
+		profiles.push({
+			uuid: profile.uuid,
+			name: profile.name
+		})
+	}
+
 	basicProfilesCache.set(playerUuid, profiles)
 	if (!profiles) return null
 
@@ -324,7 +341,7 @@ async function fetchBasicProfiles(user: string): Promise<CleanBasicProfile[] | n
 export async function fetchProfileUuid(user: string, profile: string): Promise<string | null> {
 	// if a profile wasn't provided, return
 	if (!profile) {
-		if (debug) console.debug('no profile provided?', user, profile)
+		if (cacheDebug) console.debug('no profile provided?', user, profile)
 		return null
 	}
 
@@ -334,7 +351,19 @@ export async function fetchProfileUuid(user: string, profile: string): Promise<s
 		return profileUuid
 	}
 
-	if (debug) console.debug('Cache miss: fetchProfileUuid', user, profile)
+	const playerUuid = await uuidFromUser(user)
+	if (!playerUuid) return null
+
+	const playerProfileNames = profileNameCache.keys().filter(k => k.substring(0, 32) === playerUuid)
+	if (playerProfileNames.length > 0) {
+		for (const key of playerProfileNames) {
+			if (profileNameCache.get(key) === profile) {
+				if (cacheDebug) console.debug('Cache hit: fetchProfileUuid', user, profile)
+				return key.substring(33)
+			}
+		}
+	}
+	if (cacheDebug) console.debug('Cache miss: fetchProfileUuid', user, profile)
 
 	const profiles = await fetchBasicProfiles(user)
 	if (!profiles) return null // user probably doesnt exist
@@ -362,17 +391,17 @@ export async function fetchProfile(user: string, profile: string): Promise<Clean
 
 	if (profileCache.has(profileUuid)) {
 		// we have the profile cached, return it :)
-		if (debug) console.debug('Cache hit! fetchProfile', profileUuid)
+		if (cacheDebug) console.debug('Cache hit! fetchProfile', profileUuid)
 		return profileCache.get(profileUuid)!
 	}
 
-	if (debug) console.debug('Cache miss: fetchProfile', user, profile)
+	if (cacheDebug) console.debug('Cache miss: fetchProfile', user, profile)
 
 	const profileName = await fetchProfileName(user, profile)
 
 	if (!profileName) return null // uhh this should never happen but if it does just return null
 
-	const cleanProfile = await hypixel.fetchMemberProfileUncached(playerUuid, profileUuid)
+	const cleanProfile = await hypixel.fetchMemberProfileUncached(profileUuid)
 	if (!cleanProfile) return null
 
 	// we know the name from fetchProfileName, so set it here
@@ -382,34 +411,6 @@ export async function fetchProfile(user: string, profile: string): Promise<Clean
 
 	return cleanProfile
 }
-
-/**
- * Fetch a CleanProfile from the uuid
- * @param profileUuid A profile name or profile uuid
-*/
-export async function fetchBasicProfileFromUuid(profileUuid: string): Promise<CleanProfile | null> {
-	if (profileCache.has(profileUuid)) {
-		// we have the profile cached, return it :)
-		if (debug) console.debug('Cache hit! fetchBasicProfileFromUuid', profileUuid)
-		const profile: CleanFullProfile | undefined = profileCache.get(profileUuid)
-		if (!profile) return null
-		return {
-			uuid: profile.uuid,
-			members: profile.members.map(m => ({
-				uuid: m.uuid,
-				username: m.username,
-				lastSave: m.lastSave,
-				firstJoin: m.firstJoin,
-				rank: m.rank,
-			})),
-			name: profile.name,
-			mode: profile.mode
-		}
-	}
-	// TODO: cache this
-	return await hypixel.fetchBasicProfileFromUuidUncached(profileUuid)
-}
-
 
 /**
  * Fetch the name of a profile from the user and profile uuid
@@ -427,11 +428,10 @@ export async function fetchProfileName(user: string, profile: string): Promise<s
 
 	if (profileNameCache.has(`${playerUuid}.${profileUuid}`)) {
 		// Return the profile name if it's cached
-		if (debug) console.debug('Cache hit! fetchProfileName', profileUuid)
+		if (cacheDebug) console.debug('Cache hit! fetchProfileName', profileUuid)
 		return profileNameCache.get!(`${playerUuid}.${profileUuid}`) ?? null
 	}
-
-	if (debug) console.debug('Cache miss: fetchProfileName', user, profile)
+	if (cacheDebug) console.debug('Cache miss: fetchProfileName', user, profile)
 
 	const basicProfiles = await fetchBasicProfiles(playerUuid)
 
@@ -439,11 +439,16 @@ export async function fetchProfileName(user: string, profile: string): Promise<s
 
 	let profileName = profile // we default to the profile uuid provided
 
-	for (const basicProfile of basicProfiles)
-		if (basicProfile.uuid === playerUuid && basicProfile.name)
-			profileName = basicProfile.name
+	for (const basicProfile of basicProfiles) {
+		if (basicProfile.uuid && basicProfile.name) {
+			profileNameCache.set(`${playerUuid}.${basicProfile.uuid}`, basicProfile.name)
+			if (basicProfile.uuid == profileUuid || basicProfile.name == profile) {
+				// Matches!
+				profileName = basicProfile.name
+			}
+		}
+	}
 
-	profileNameCache.set(`${playerUuid}.${profileUuid}`, profileName)
 	return profileName
 }
 

@@ -21,7 +21,7 @@ const PET_RARITY_OFFSET: Partial<Record<typedHypixelApi.Pet['tier'], number>> = 
 function calculateXpTable(rarity: keyof typeof PET_RARITY_OFFSET) {
 	const data = [0]
 	let current = 0
-	for (let i = 0; i < 100; i++) {
+	for (let i = 0; i < 99; i++) {
 		current += PET_LEVELS[i + ((rarity in PET_RARITY_OFFSET) ? PET_RARITY_OFFSET[rarity] : PET_RARITY_OFFSET['LEGENDARY'])!]
 		data.push(current)
 	}

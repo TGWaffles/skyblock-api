@@ -75,7 +75,9 @@ export let profileFromUsername = async function profileFromUsername(
 	const rawData = await fetchResponse.text()
 	try {
 		data = JSON.parse(rawData)
-	} catch {}
+	} catch (err) {
+		console.error(`Error ${err} parsing json: ${rawData}`)
+	}
 
 	return {
 		uuid: data.id,

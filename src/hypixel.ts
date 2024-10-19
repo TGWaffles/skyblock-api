@@ -132,17 +132,27 @@ export async function fetchUser({ user, uuid, username }: UserAny, included: Inc
 
 	let profilesData: CleanProfile[] | undefined
 	let basicProfilesData: CleanBasicProfile[] | undefined
-	let playerData: CleanPlayer | null = null
+	let playerData: CleanPlayer | null
+	let playerPromise: Promise<CleanPlayer | null> = new Promise<CleanPlayer | null>(resolve => resolve(null))
+	let profilesPromise: Promise<CleanProfile[] | null>
+
+	if (includeProfiles) {
+		profilesPromise = cached.fetchSkyblockProfiles(uuid)
+	}
 
 	if (includePlayers) {
-		playerData = await cached.fetchBasicPlayer(uuid)
-		// if not including profiles, include lightweight profiles just in case
-		if (!includeProfiles) {
-			basicProfilesData = playerData?.profiles
-		}
+		playerPromise = cached.fetchBasicPlayer(uuid)
 	}
-	if (includeProfiles)
-		profilesData = await cached.fetchSkyblockProfiles(uuid) ?? []
+
+	playerData = await playerPromise
+	if (includeProfiles) {
+		// (this is already assigned if includeProfiles is true, ignore ts!)
+		// @ts-ignore
+		profilesData = await profilesPromise ?? []
+	} else {
+		// if not including profiles, include lightweight profiles just in case
+		basicProfilesData = playerData?.profiles
+	}
 
 	let activeProfile: CleanProfile
 	let lastOnline: number = 0

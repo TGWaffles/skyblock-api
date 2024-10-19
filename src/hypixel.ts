@@ -36,6 +36,7 @@ import { cleanEndedAuctions } from './cleaners/skyblock/endedAuctions.js'
 import { Auctions, cleanAuctions } from './cleaners/skyblock/auctions.js'
 import { withCache } from './util.js'
 import { Item } from './cleaners/skyblock/inventory.js'
+import { cleanSkillListResponse } from './cleaners/skyblock/skills'
 
 export type Included = 'profiles' | 'player' | 'stats' | 'inventories' | undefined
 
@@ -69,11 +70,12 @@ export async function sendCleanApiRequest<P extends keyof typeof cleanResponseFu
 const cleanResponseFunctions = {
 	'player': (data, options) => cleanPlayerResponse(data.player),
 	'v2/skyblock/profile': (data: typedHypixelApi.SkyBlockProfileResponse, options) => cleanSkyblockProfileResponse(data.profile),
-	'v2/skyblock/profiles': (data, options) => cleanSkyblockProfilesResponse(data.profiles, options),
+	'v2/skyblock/profiles': (data, options) => cleanSkyblockProfilesResponse(data.profiles),
 	'skyblock/auctions_ended': (data, options) => cleanEndedAuctions(data),
 	'skyblock/auction': (data, options) => cleanAuctions(data, options.page ?? 0),
 	'resources/skyblock/election': (data, options) => cleanElectionResponse(data),
 	'resources/skyblock/items': (data, options) => cleanItemListResponse(data),
+	'resources/skyblock/skills': (data, options) => cleanSkillListResponse(data),
 } as const
 
 
@@ -320,6 +322,19 @@ export async function fetchItemList() {
 		async () => {
 			return await sendCleanApiRequest(
 				'resources/skyblock/items',
+				{}
+			)
+		}
+	)
+}
+
+export async function fetchSkillList() {
+	return await withCache(
+		'skillList',
+		60 * 60 * 1000,
+		async () => {
+			return await sendCleanApiRequest(
+				'resources/skyblock/skills',
 				{}
 			)
 		}

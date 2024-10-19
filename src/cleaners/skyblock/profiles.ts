@@ -22,8 +22,7 @@ export function cleanPlayerSkyblockProfiles(rawProfiles: HypixelPlayerStatsSkyBl
 
 /** Convert an array of raw profiles into clean profiles */
 export async function cleanSkyblockProfilesResponse(
-    data: typedHypixelApi.SkyBlockProfilesResponse['profiles'],
-    options: ApiOptions
+    data: typedHypixelApi.SkyBlockProfilesResponse['profiles']
 ): Promise<CleanFullProfile[] | null> {
     if (!data) return null
 

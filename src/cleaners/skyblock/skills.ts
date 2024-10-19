@@ -1,9 +1,9 @@
 import typedHypixelApi from 'typed-hypixel-api'
-import { fetchSkills } from '../../constants.js'
 import { levelFromXpTable } from '../../util.js'
 import { fetchPlayer } from '../../hypixelCached.js'
 import * as constants from '../../constants.js'
 import { CleanFullPlayer } from '../player.js'
+import { fetchSkillList } from '../../hypixel'
 
 export interface Skill {
 	id: string
@@ -140,23 +140,37 @@ const skillXpTableEasier = [
 	94450 // 25
 ]
 
+export interface SkillListSkill {
+	name: string
+	maxLevel: number
+	levels: {
+		level: number
+		totalExpRequired: number
+	}[]
+}
+
 
 // for skills that aren't in maxSkills, default to this
 const skillsDefaultMaxLevel: number = 50
 
-/**
- * Get the skill level for the amount of total xp
- * @param xp The xp we're finding the level for
- * @param easierLevel Whether it should use the alternate leveling xp table (used for cosmetic skills and dungeoneering)
- */
-export function levelForSkillXp(xp: number, maxLevel: number) {
-	const xpTable = (maxLevel <= 25 ? skillXpTableEasier : skillXpTable).slice(0, maxLevel)
-	return levelFromXpTable(xp, xpTable)
+export async function cleanSkillListResponse(data: typedHypixelApi.SkyBlockSkillsResponse): Promise<Map<string, SkillListSkill>> {
+	const skillDataMap = new Map<string, SkillListSkill>()
+
+	for (const [skillName, skillData] of Object.entries(data.skills)) {
+		skillDataMap.set(skillName.toLowerCase(), {
+			name: skillData.name,
+			maxLevel: skillData.maxLevel,
+			levels: skillData.levels
+		})
+	}
+
+	return skillDataMap
 }
 
 function skillFromLevel(id: string, level: number | undefined): Skill {
-	if (level === undefined)
+	if (level === undefined) {
 		level = 0
+		}
 	const maxLevel = skillsMaxLevel[id] ?? skillsDefaultMaxLevel
 	const xpTable = (maxLevel <= 25 ? skillXpTableEasier : skillXpTable).slice(0, maxLevel)
 	const xp = level > 0 ? xpTable[level - 1] ?? 0 : 0
@@ -204,8 +218,9 @@ export async function ensureFullSkills(playerUuid: string): Promise<Skills | nul
 }
 
 export async function cleanSkills(data: typedHypixelApi.SkyBlockProfileMember & { uuid: string }): Promise<Skills | null> {
-	const allSkillNames = await fetchSkills()
 	const skills: Skill[] = []
+	const allSkillsList = await fetchSkillList()
+	const allSkillNames = Array.from(allSkillsList.keys())
 
 	let skillNamesFound: string[] = []
 
@@ -226,10 +241,10 @@ export async function cleanSkills(data: typedHypixelApi.SkyBlockProfileMember & 
 
 			const skillMaxLevel = skillsMaxLevel[skillName] ?? skillsDefaultMaxLevel
 
-			const xpTable = (skillMaxLevel <= 25 ? skillXpTableEasier : skillXpTable).slice(0, skillMaxLevel)
+			const xpTable = allSkillsList.get(skillName)?.levels.map(level => level.totalExpRequired) ?? (skillMaxLevel <= 25 ? skillXpTableEasier : skillXpTable).slice(0, skillMaxLevel)
 
 			// the level you're at for this skill
-			const skillLevel = levelForSkillXp(skillXp, skillMaxLevel)
+			const skillLevel = levelFromXpTable(skillXp, xpTable)
 
 			// the total xp required for the previous level
 			const previousLevelXp = skillLevel >= 1 ? xpTable[skillLevel - 1] : 0

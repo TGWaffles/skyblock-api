@@ -134,12 +134,12 @@ export let sendApiRequest = async<P extends keyof typedHypixelApi.Requests>(
 			options
 		)
 	} catch (e) {
+		apiKeyUsage.inflight--
 		console.log(`Error ${e} sending API request to ${path} with options ${JSON.stringify(optionsWithoutKey)}, retrying in a scond`)
 		await sleep(1000)
 		return await sendApiRequest(path, options, attemptCount + 1)
-	} finally {
-		apiKeyUsage.inflight--
 	}
+	apiKeyUsage.inflight--
 
 	if (!response.data.success) {
 		// bruh

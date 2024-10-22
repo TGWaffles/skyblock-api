@@ -3,7 +3,7 @@ import { levelFromXpTable } from '../../util.js'
 import { fetchPlayer } from '../../hypixelCached.js'
 import * as constants from '../../constants.js'
 import { CleanFullPlayer } from '../player.js'
-import { fetchSkillList } from '../../hypixel'
+import { fetchSkillList } from '../../hypixel.js'
 
 export interface Skill {
 	id: string

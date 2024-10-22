@@ -36,7 +36,7 @@ import { cleanEndedAuctions } from './cleaners/skyblock/endedAuctions.js'
 import { Auctions, cleanAuctions } from './cleaners/skyblock/auctions.js'
 import { withCache } from './util.js'
 import { Item } from './cleaners/skyblock/inventory.js'
-import { cleanSkillListResponse } from './cleaners/skyblock/skills'
+import { cleanSkillListResponse } from './cleaners/skyblock/skills.js'
 
 export type Included = 'profiles' | 'player' | 'stats' | 'inventories' | undefined
 

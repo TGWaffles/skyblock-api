@@ -82,7 +82,7 @@ function cleanItemListItem(item: typedHypixelApi.SkyBlockItemsResponse['items'][
     const vanillaId = cleanItemId(item.durability ? `${item.material}:${item.durability}` : item.material)
     return {
         id: item.id,
-        headTexture: (item.material === 'SKULL_ITEM' && 'skin' in item) && item.skin ? headIdFromBase64(item.skin) : undefined,
+        headTexture: (item.material === 'SKULL_ITEM' && 'skin' in item) && item.skin ? headIdFromBase64(item.skin.value) : undefined,
         vanillaId,
         tier: item.tier ?? null,
         display: {

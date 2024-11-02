@@ -3,7 +3,12 @@ import * as nbt from 'prismarine-nbt'
 
 
 function base64decode(base64: string): Buffer {
-	return Buffer.from(base64, 'base64')
+	try {
+		return Buffer.from(base64, 'base64')
+	} catch (e) {
+		console.error(`Error decoding base64, string: ${base64} `, e)
+		throw e
+	}
 }
 
 export interface Item {
